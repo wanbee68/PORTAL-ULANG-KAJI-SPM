@@ -23,7 +23,7 @@
     </div>
   </div>
 
-  <script type="module" data-type="text/babel">
+  <script type="text/babel" data-type="module">
     // --- PEMERANGKAP RALAT (ERROR CATCHER) ---
     // Mengelakkan skrin putih jika cikgu tersilap letak koma/tanda petik
     window.addEventListener('error', function(e) {
@@ -78,7 +78,7 @@
     const app = isMissingConfig ? null : initializeApp(firebaseConfig);
     const auth = isMissingConfig ? null : getAuth(app);
     const db = isMissingConfig ? null : getFirestore(app);
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'spm-portal-app';
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'portal-ulang-kaji-spm';
 
     // --- DATA PEMBELAJARAN & TETAPAN ---
     const SENARAI_NEGERI = ["Johor", "Kedah", "Kelantan", "Melaka", "Negeri Sembilan", "Pahang", "Perak", "Perlis", "Pulau Pinang", "Sabah", "Sarawak", "Selangor", "Terengganu", "WP Kuala Lumpur", "MRSM", "SBP", "YIK"];
