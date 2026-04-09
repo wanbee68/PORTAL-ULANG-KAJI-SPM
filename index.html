@@ -15,16 +15,36 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <!-- Babel untuk compile JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-
-  <!-- Firebase Compat SDK (Lebih stabil untuk HTML tunggal tanpa server) -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root">
+    <div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: sans-serif; color: #475569;">
+      Sistem sedang dimuatkan... Jika paparan ini kekal lebih dari 5 saat, sila periksa kod Firebase anda.
+    </div>
+  </div>
 
-  <script type="text/babel">
+  <script type="text/babel" data-type="module">
+    // --- PEMERANGKAP RALAT (ERROR CATCHER) ---
+    // Mengelakkan skrin putih jika cikgu tersilap letak koma/tanda petik
+    window.addEventListener('error', function(e) {
+      document.getElementById('root').innerHTML = `
+        <div style="padding: 30px; background-color: #fee2e2; color: #991b1b; font-family: sans-serif; min-height: 100vh;">
+          <h2 style="font-weight: bold; font-size: 24px; margin-bottom: 10px;">⚠️ Ralat Sistem Dikesan!</h2>
+          <p>Paparan tidak dapat dimuatkan kerana terdapat kesilapan pada kod (Sintaks).</p>
+          <p style="background: #fff; padding: 10px; border-radius: 5px; margin-top: 15px; font-family: monospace;"><b>Mesej Ralat:</b> ${e.message}</p>
+          <ul style="margin-top: 20px;">
+            <li>Sila pastikan Cikgu meletakkan maklumat Firebase di dalam tanda petik. Contoh: <code>apiKey: "AIzaSy..."</code></li>
+            <li>Pastikan tiada koma (,) yang terpadam di hujung setiap baris.</li>
+          </ul>
+        </div>
+      `;
+    });
+
+    // Import Firebase Modular (Terus dari sumber CDN - Sangat Stabil untuk GitHub Pages)
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
+    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
     const { useState, useEffect } = React;
 
     // ==========================================
@@ -39,28 +59,25 @@
     } else {
       // INI BERJALAN DI DALAM GOOGLE SITES/GITHUB CIKGU
       // Cikgu wajib letak 'firebaseConfig' dari Firebase Console cikgu di sini:
-      // Your web app's Firebase configuration
-  	firebaseConfig = {
-    	apiKey: "AIzaSyBThzeYE3QXOBB2XWot2vB9aOJSbzAv7ew",
-    	authDomain: "portal-ulang-kaji-spm.firebaseapp.com",
-    	projectId: "portal-ulang-kaji-spm",
-    	storageBucket: "portal-ulang-kaji-spm.firebasestorage.app",
-    	messagingSenderId: "1006940786054",
-    	appId: "1:1006940786054:web:c69fdf484eee4993023007"
-  };
+      // PENTING: Jangan buang tanda petik (" ") sewaktu menukar perkataan TUKAR_INI
+      const firebaseConfig = {
+        apiKey: "AIzaSyBThzeYE3QXOBB2XWot2vB9aOJSbzAv7ew",
+        authDomain: "portal-ulang-kaji-spm.firebaseapp.com",
+        databaseURL: "https://portal-ulang-kaji-spm-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "portal-ulang-kaji-spm",
+        storageBucket: "portal-ulang-kaji-spm.firebasestorage.app",
+        messagingSenderId: "1006940786054",
+        appId: "1:1006940786054:web:c69fdf484eee4993023007"
+      };
       
       if (firebaseConfig.apiKey === "AIzaSyBThzeYE3QXOBB2XWot2vB9aOJSbzAv7ew") {
         isMissingConfig = true;
       }
     }
 
-    // Initialize Firebase (Versi Compat)
-    if (!firebase.apps.length && !isMissingConfig) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    
-    const auth = isMissingConfig ? null : firebase.auth();
-    const db = isMissingConfig ? null : firebase.firestore();
+    const app = isMissingConfig ? null : initializeApp(firebaseConfig);
+    const auth = isMissingConfig ? null : getAuth(app);
+    const db = isMissingConfig ? null : getFirestore(app);
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'spm-portal-app';
 
     // --- DATA PEMBELAJARAN & TETAPAN ---
@@ -90,33 +107,33 @@
       const [teacherTab, setTeacherTab] = useState('semakan');
 
       useEffect(() => {
-        if (isMissingConfig) return;
+        if (isMissingConfig || !auth) return;
         const initAuth = async () => {
           try {
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await auth.signInWithCustomToken(__initial_auth_token);
+              await signInWithCustomToken(auth, __initial_auth_token);
             } else {
-              await auth.signInAnonymously();
+              await signInAnonymously(auth);
             }
           } catch (err) {
             console.error("Auth error:", err);
           }
         };
         initAuth();
-        const unsubscribe = auth.onAuthStateChanged(setUser);
+        const unsubscribe = onAuthStateChanged(auth, setUser);
         return () => unsubscribe();
       }, []);
 
       useEffect(() => {
-        if (!user || isMissingConfig) return;
+        if (!user || isMissingConfig || !db) return;
         
-        const qRef = db.collection(`artifacts/${appId}/public/data/questions`);
-        const unsubQ = qRef.onSnapshot((snapshot) => {
+        const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'questions');
+        const unsubQ = onSnapshot(qRef, (snapshot) => {
           setQuestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }, (err) => console.error(err));
 
-        const sRef = db.collection(`artifacts/${appId}/public/data/submissions`);
-        const unsubS = sRef.onSnapshot((snapshot) => {
+        const sRef = collection(db, 'artifacts', appId, 'public', 'data', 'submissions');
+        const unsubS = onSnapshot(sRef, (snapshot) => {
           const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           sData.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
           setSubmissions(sData);
@@ -149,10 +166,10 @@
           return showToast("Sila lengkapkan semua butiran, pilihan soalan dan jawapan anda.", "error");
         }
         try {
-          const sRef = db.collection(`artifacts/${appId}/public/data/submissions`);
+          const sRef = collection(db, 'artifacts', appId, 'public', 'data', 'submissions');
           const infoBahagian = studentForm.bahagian ? ` [${studentForm.bahagian}]` : '';
           
-          await sRef.add({
+          await addDoc(sRef, {
             questionId: selectedQuestion.id,
             soalanInfo: `${selectedQuestion.negeri} - ${selectedQuestion.kertas} (${selectedQuestion.tahun})${infoBahagian}`,
             nama: studentForm.nama,
@@ -163,7 +180,7 @@
             status: 'Dihantar',
             bintang: null,
             komen: null,
-            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            timestamp: serverTimestamp()
           });
           setStudentForm({ ...studentForm, bahagian: '', jawapan: '' });
           showToast("Jawapan berjaya dihantar! Sila rujuk ruangan arkib.");
@@ -186,8 +203,8 @@
       const handleAddQuestion = async () => {
         if (!newQuestion.pautan) return showToast("Sila masukkan pautan Google Drive", "error");
         try {
-          const qRef = db.collection(`artifacts/${appId}/public/data/questions`);
-          await qRef.add({ ...newQuestion, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
+          const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'questions');
+          await addDoc(qRef, { ...newQuestion, timestamp: serverTimestamp() });
           setNewQuestion({ ...newQuestion, pautan: '' });
           showToast("Soalan baharu berjaya ditambah!");
         } catch (error) {
@@ -199,12 +216,12 @@
         if (!gradingSubmission) return;
         if (!gradingForm.bintang) return showToast("Sila berikan penilaian bintang.", "error");
         try {
-          const docRef = db.doc(`artifacts/${appId}/public/data/submissions/${gradingSubmission.id}`);
-          await docRef.update({
+          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', gradingSubmission.id);
+          await updateDoc(docRef, {
             status: 'Disemak',
             bintang: gradingForm.bintang,
             komen: { kekuatan: gradingForm.kekuatan, kelemahan: gradingForm.kelemahan, intervensi: gradingForm.intervensi },
-            disemakPada: firebase.firestore.FieldValue.serverTimestamp()
+            disemakPada: serverTimestamp()
           });
           setGradingSubmission(null);
           showToast("Semakan berjaya direkodkan!");
@@ -226,7 +243,7 @@
           <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center">
              <i className="fas fa-exclamation-triangle text-6xl text-red-500 mb-4"></i>
              <h1 className="text-2xl font-bold text-slate-800 mb-2">Konfigurasi Pangkalan Data Diperlukan</h1>
-             <p className="text-slate-600 max-w-lg mb-4">Cikgu perlu menggantikan perkataan <b>"TUKAR_INI"</b> dalam fail ini dengan Firebase Config cikgu sendiri untuk membolehkan portal ini menyimpan data pelajar dan guru.</p>
+             <p className="text-slate-600 max-w-lg mb-4">Cikgu perlu menggantikan perkataan <b>"TUKAR_INI"</b> dalam fail ini dengan Firebase Config cikgu sendiri untuk membolehkan portal ini berfungsi.</p>
           </div>
         );
       }
