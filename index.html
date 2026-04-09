@@ -16,29 +16,19 @@
   <!-- Babel untuk compile JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Firebase Modular SDK -->
-  <script type="importmap">
-    {
-      "imports": {
-        "firebase/app": "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js",
-        "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js",
-        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js"
-      }
-    }
-  </script>
+  <!-- Firebase Compat SDK (Lebih stabil untuk HTML tunggal tanpa server) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
   <div id="root"></div>
 
-  <script type="text/babel" data-type="module">
-    import { initializeApp } from 'firebase/app';
-    import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
-    import { getFirestore, collection, addDoc, onSnapshot, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
-
+  <script type="text/babel">
     const { useState, useEffect } = React;
 
     // ==========================================
-    // CIKGU: GANTIKAN KOD DI BAWAH JIKA GUNA DI GOOGLE SITES
+    // CIKGU: GANTIKAN KOD DI BAWAH JIKA GUNA DI GOOGLE SITES / GITHUB
     // ==========================================
     let firebaseConfig = {};
     let isMissingConfig = false;
@@ -47,26 +37,30 @@
       // Ini berjalan jika di dalam Canvas AI
       firebaseConfig = JSON.parse(__firebase_config);
     } else {
-      // INI BERJALAN DI DALAM GOOGLE SITES CIKGU
+      // INI BERJALAN DI DALAM GOOGLE SITES/GITHUB CIKGU
       // Cikgu wajib letak 'firebaseConfig' dari Firebase Console cikgu di sini:
-       // Your web app's Firebase configuration
-  	const firebaseConfig = {
+      // Your web app's Firebase configuration
+  	firebaseConfig = {
     	apiKey: "AIzaSyBThzeYE3QXOBB2XWot2vB9aOJSbzAv7ew",
     	authDomain: "portal-ulang-kaji-spm.firebaseapp.com",
     	projectId: "portal-ulang-kaji-spm",
     	storageBucket: "portal-ulang-kaji-spm.firebasestorage.app",
     	messagingSenderId: "1006940786054",
     	appId: "1:1006940786054:web:c69fdf484eee4993023007"
-  }
-
+  };
+      
       if (firebaseConfig.apiKey === "AIzaSyBThzeYE3QXOBB2XWot2vB9aOJSbzAv7ew") {
         isMissingConfig = true;
       }
-    };
+    }
 
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    // Initialize Firebase (Versi Compat)
+    if (!firebase.apps.length && !isMissingConfig) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    
+    const auth = isMissingConfig ? null : firebase.auth();
+    const db = isMissingConfig ? null : firebase.firestore();
     const appId = typeof __app_id !== 'undefined' ? __app_id : 'spm-portal-app';
 
     // --- DATA PEMBELAJARAN & TETAPAN ---
@@ -100,28 +94,29 @@
         const initAuth = async () => {
           try {
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-              await signInWithCustomToken(auth, __initial_auth_token);
+              await auth.signInWithCustomToken(__initial_auth_token);
             } else {
-              await signInAnonymously(auth);
+              await auth.signInAnonymously();
             }
           } catch (err) {
             console.error("Auth error:", err);
           }
         };
         initAuth();
-        const unsubscribe = onAuthStateChanged(auth, setUser);
+        const unsubscribe = auth.onAuthStateChanged(setUser);
         return () => unsubscribe();
       }, []);
 
       useEffect(() => {
         if (!user || isMissingConfig) return;
-        const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'questions');
-        const unsubQ = onSnapshot(qRef, (snapshot) => {
+        
+        const qRef = db.collection(`artifacts/${appId}/public/data/questions`);
+        const unsubQ = qRef.onSnapshot((snapshot) => {
           setQuestions(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
         }, (err) => console.error(err));
 
-        const sRef = collection(db, 'artifacts', appId, 'public', 'data', 'submissions');
-        const unsubS = onSnapshot(sRef, (snapshot) => {
+        const sRef = db.collection(`artifacts/${appId}/public/data/submissions`);
+        const unsubS = sRef.onSnapshot((snapshot) => {
           const sData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           sData.sort((a, b) => (b.timestamp?.toMillis() || 0) - (a.timestamp?.toMillis() || 0));
           setSubmissions(sData);
@@ -154,10 +149,10 @@
           return showToast("Sila lengkapkan semua butiran, pilihan soalan dan jawapan anda.", "error");
         }
         try {
-          const sRef = collection(db, 'artifacts', appId, 'public', 'data', 'submissions');
+          const sRef = db.collection(`artifacts/${appId}/public/data/submissions`);
           const infoBahagian = studentForm.bahagian ? ` [${studentForm.bahagian}]` : '';
           
-          await addDoc(sRef, {
+          await sRef.add({
             questionId: selectedQuestion.id,
             soalanInfo: `${selectedQuestion.negeri} - ${selectedQuestion.kertas} (${selectedQuestion.tahun})${infoBahagian}`,
             nama: studentForm.nama,
@@ -168,7 +163,7 @@
             status: 'Dihantar',
             bintang: null,
             komen: null,
-            timestamp: serverTimestamp()
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
           });
           setStudentForm({ ...studentForm, bahagian: '', jawapan: '' });
           showToast("Jawapan berjaya dihantar! Sila rujuk ruangan arkib.");
@@ -191,8 +186,8 @@
       const handleAddQuestion = async () => {
         if (!newQuestion.pautan) return showToast("Sila masukkan pautan Google Drive", "error");
         try {
-          const qRef = collection(db, 'artifacts', appId, 'public', 'data', 'questions');
-          await addDoc(qRef, { ...newQuestion, timestamp: serverTimestamp() });
+          const qRef = db.collection(`artifacts/${appId}/public/data/questions`);
+          await qRef.add({ ...newQuestion, timestamp: firebase.firestore.FieldValue.serverTimestamp() });
           setNewQuestion({ ...newQuestion, pautan: '' });
           showToast("Soalan baharu berjaya ditambah!");
         } catch (error) {
@@ -204,12 +199,12 @@
         if (!gradingSubmission) return;
         if (!gradingForm.bintang) return showToast("Sila berikan penilaian bintang.", "error");
         try {
-          const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'submissions', gradingSubmission.id);
-          await updateDoc(docRef, {
+          const docRef = db.doc(`artifacts/${appId}/public/data/submissions/${gradingSubmission.id}`);
+          await docRef.update({
             status: 'Disemak',
             bintang: gradingForm.bintang,
             komen: { kekuatan: gradingForm.kekuatan, kelemahan: gradingForm.kelemahan, intervensi: gradingForm.intervensi },
-            disemakPada: serverTimestamp()
+            disemakPada: firebase.firestore.FieldValue.serverTimestamp()
           });
           setGradingSubmission(null);
           showToast("Semakan berjaya direkodkan!");
